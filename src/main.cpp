@@ -11,9 +11,15 @@ CTBot myBot;    // Object for interacting with Telegram bot
 WiFiUDP ntpUDP; // UDP object for NTP communication
 Servo servo1;   // Servo object for controlling the cat feeder mechanism
 Servo servo2;   // Servo object for controlling the fish feeder mechanism
+WiFiClient wifiClient;
+
 
 String ssid = "Fadgib";         // Your Wi-Fi network name (SSID)
 String pass = "fadhligibran12"; // Your Wi-Fi network password
+
+String ipfyAddress = String("api.ipify.org");
+unsigned long abortTime;
+String ip;
 
 String token = "6526441782:AAFJM0zrJW1GmXOcQazzifJE3h-oxG7k8Hg"; // Your Telegram bot token
 const int id = 1221284266;                                       // Telegram chat ID where messages will be sent
@@ -80,6 +86,30 @@ String ipToString(IPAddress ip)
   return s;
 }
 
+String getPublicIP()
+{
+  wifiClient.connect(ipfyAddress, 80);
+  abortTime = millis() + 5000;
+  wifiClient.println("GET / HTTP/1.1");
+  wifiClient.println("Host: " + ipfyAddress);
+  wifiClient.println();
+  delay(5000);
+
+  while (wifiClient.available())
+  {
+    if (abortTime > millis())
+    {
+      ip = "!!! Wifi Client Timedout!";
+      wifiClient.stop();
+      return "";
+    }
+
+    ip = wifiClient.readStringUntil('\n');
+  }
+
+  return ip;
+}
+
 // Interrupt Service Routine (ISR) for fish button press
 IRAM_ATTR void fish()
 {
@@ -122,6 +152,10 @@ void setup()
   // Connect to Wi-Fi network with specified SSID and password
   myBot.wifiConnect(ssid, pass);
 
+  ArduinoOTA.begin();
+  ArduinoOTA.onEnd([]()
+                   { myBot.sendMessage(id, "Update OTA berhasil"); });
+
   // Initialize NTP client for time synchronization
   timeClient.begin();
   // Update time from NTP server
@@ -136,9 +170,9 @@ void setup()
     myBot.sendMessage(id, "Bot dinyalakan, terhubung ke " + ssid + ", IP: " + ipToString(WiFi.localIP()));
   }
 
-  ArduinoOTA.begin();
-  ArduinoOTA.onEnd([]()
-                   { myBot.sendMessage(id, "Update OTA berhasil"); });
+  prevEpoch = timeClient.getEpochTime();
+
+  delay(1000);
 }
 
 void loop()
@@ -190,9 +224,21 @@ void loop()
     {
       feedCat();
     }
-    else if (msg.text == "Feed fish")
+
+    if (msg.text == "Feed fish")
     {
       feedFish();
+    }
+
+    if (msg.text == "Reset") 
+    {
+      prevEpoch = timeClient.getEpochTime();
+      myBot.sendMessage(id, "Telah di reset");
+    }
+
+    if (msg.text == "Ip")
+    {
+    myBot.sendMessage(id, "http://" + getPublicIP() + ":8080/");
     }
 
     // Calculate and send time remaining for next scheduled feeding
@@ -221,3 +267,4 @@ void loop()
     }
   }
 }
+
